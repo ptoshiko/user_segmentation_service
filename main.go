@@ -4,26 +4,20 @@ import (
 	"context"
 	"regexp"
 
-	// "httpserver/database"
+	"httpserver/database"
 	"httpserver/model"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v4"
 	_ "github.com/lib/pq"
 )
 
 type server struct {
-	conn *pgx.Conn
+	db *database.Database
 }
 
 // createSegmnet moment
-func responseJSON(w http.ResponseWriter, response []byte) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(response)
-}
 
 var validSegmentNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
@@ -47,34 +41,12 @@ func (s *server) createSegment(c *gin.Context) {
 		return
 	}
 
-	tx, err := s.conn.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error starting transaction"})
-		return
-	}
-	defer tx.Rollback(ctx)
-	// Проверка, что такого сегмента еще нет
-	var id int
-	err = tx.QueryRow(ctx, `SELECT seg_id FROM segments WHERE seg_name = $1`, seg.SegName).Scan(&id)
+	err := s.db.CreateSegment(ctx, seg)
 
-	if err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Segment already exists", "id": id})
-		return
-	} else if err != pgx.ErrNoRows {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error while selecting segments"})
-		return
-	}
-
-	// Вставка нового сегмента
-	_, err = tx.Exec(ctx, `INSERT INTO segments (seg_name) VALUES ($1)`, seg.SegName)
+	
+	// log.Println("here" , err.Error())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error inserting segment"})
-		return
-	}
-
-	err = tx.Commit(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error committing transaction"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -92,39 +64,9 @@ func (s *server) deleteSegment(c *gin.Context) {
 		return
 	}
 
-	tx, err := s.conn.BeginTx(ctx, pgx.TxOptions{})
+	err := s.db.DeleteSegment(ctx, seg)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error starting transaction"})
-		return
-	}
-	defer tx.Rollback(ctx)
-
-	var segmentID int
-	err = tx.QueryRow(ctx, `SELECT seg_id FROM segments WHERE seg_name = $1`, seg.SegName).Scan(&segmentID)
-
-	if err == pgx.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Segment not found"})
-		return
-	} else if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error while selecting segments"})
-		return
-	}
-
-	_, err = tx.Exec(ctx, "DELETE FROM user_segment WHERE segment_id = $1", segmentID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error deleting references in user_segment"})
-		return
-	}
-
-	_, err = tx.Exec(ctx, "DELETE FROM segments WHERE seg_name = $1", seg.SegName)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error deleting segment"})
-		return
-	}
-
-	err = tx.Commit(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error committing transaction"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -143,55 +85,10 @@ func (s *server) updateUserSegments(c *gin.Context) {
 		return
 	}
 
-	// Start a transaction
-	tx, err := s.conn.BeginTx(ctx, pgx.TxOptions{})
+	err := s.db.UpdateUserSegments(ctx, us)
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error starting transaction"})
-		return
-	}
-	defer tx.Rollback(ctx)
-
-	// Add segments to the user
-	for _, segName := range us.SegmentsToAdd {
-
-		var segmentID int
-		err = tx.QueryRow(ctx, "SELECT seg_id FROM segments WHERE seg_name = $1", segName).Scan(&segmentID)
-
-		log.Println(segmentID)
-
-		if err == pgx.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Segment not found"})
-			continue
-		}
-		_, err = tx.Exec(ctx, "INSERT INTO user_segment (user_id, segment_id) VALUES ($1, $2)", us.UserID, segmentID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error adding segment to user"})
-			return
-			// should we return ?
-		}
-	}
-
-	// Remove segments from the user
-	for _, segName := range us.SegmentsToRemove {
-		var segmentID int
-		err = tx.QueryRow(ctx, "SELECT seg_id FROM segments WHERE seg_name = $1", segName).Scan(&segmentID)
-
-		if err == pgx.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Segment not found"})
-			continue
-		}
-
-		_, err = tx.Exec(ctx, "DELETE FROM user_segment WHERE user_id = $1 AND segment_id = $2", us.UserID, segmentID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error removing segment from user"})
-			return
-		}
-	}
-
-	// Commit the transaction
-	err = tx.Commit(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error committing transaction"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -210,26 +107,11 @@ func (s *server) getUserSegments(c *gin.Context) {
 	// 	return
 	// }
 
-	rows, err := s.conn.Query(ctx, `
-		SELECT seg_id, seg_name
-		FROM segments 
-		INNER JOIN user_segment ON segments.seg_id = user_segment.segment_id
-		WHERE user_segment.user_id = $1 
-		`, userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error retrieving user segments"})
-		return
-	}
-	defer rows.Close()
+	segments, err := s.db.GetUserSegments(ctx, userID)
 
-	var segments []model.Segment
-	for rows.Next() {
-		var seg model.Segment
-		if err := rows.Scan(&seg.SegID, &seg.SegName); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error scanning rows"})
-			return
-		}
-		segments = append(segments, seg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	c.JSON(http.StatusOK, segments)
@@ -237,19 +119,26 @@ func (s *server) getUserSegments(c *gin.Context) {
 
 func main() {
 
-	dsn := "postgres://postgres:postgres@postgres:5432/postgres" + "?sslmode=disable"
-
-	conn, err := pgx.Connect(context.Background(), dsn)
+	db, err := database.New()
+	defer db.Close(context.Background())
 	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
+		return
 	}
-	defer conn.Close(context.Background())
+	s := server{db: db}
 
-	if err = conn.Ping(context.Background()); err != nil {
-		log.Fatalf("can't ping db: %s", err)
-	}
+	// dsn := "postgres://postgres:postgres@postgres:5432/postgres" + "?sslmode=disable"
 
-	s := server{conn: conn}
+	// conn, err := pgx.Connect(context.Background(), dsn)
+	// if err != nil {
+	// 	log.Fatalf("Unable to connect to database: %v\n", err)
+	// }
+	// defer conn.Close(context.Background())
+
+	// if err = conn.Ping(context.Background()); err != nil {
+	// 	log.Fatalf("can't ping db: %s", err)
+	// }
+
+	// s := server{conn: conn}
 
 	router := gin.Default()
 
@@ -271,126 +160,3 @@ func main() {
 
 	// log.Fatal(http.ListenAndServe(":8080", nil))
 }
-
-// transactions
-
-// func (s *server) deleteSegment(rw http.ResponseWriter, req *http.Request) {
-// 	ctx := req.Context()
-// 	body, err := io.ReadAll(req.Body)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-
-// 	log.Println(string(body))
-
-// 	var seg model.SegName
-
-// 	err = json.Unmarshal(body, &seg)
-// 	if err != nil {
-// 		log.Println("vse horosho")
-// 		panic(err)
-// 		// make error processing
-// 	}
-
-// 	tx, err := s.conn.BeginTx(ctx, pgx.TxOptions{})
-// 	if err != nil {
-// 		http.Error(rw, "Error starting transaction", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	defer tx.Rollback(ctx)
-// 	// нужна транзакция
-// 	// вынести в папку с базой
-
-// 	var id int
-// 	err = tx.QueryRow(ctx, `SELECT seg_id FROM segments WHERE seg_name = $1`, seg.SegName).Scan(&id)
-
-// 	if err == pgx.ErrNoRows {
-// 		http.Error(rw, "Error: error while selecting segments: "+err.Error(), http.StatusCreated)
-// 		return
-// 	}
-
-// 	_, err = tx.Exec(ctx, "DELETE FROM segments WHERE seg_name = $1", seg.SegName)
-// 	if err != nil {
-// 		http.Error(rw, "Error deleting segment", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	err = tx.Commit(ctx)
-// 	if err != nil {
-// 		http.Error(rw, "Error committing transaction", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	rw.WriteHeader(http.StatusOK)
-// 	rw.Write([]byte("Segment deleted successfully"))
-// }
-
-// func (s *server) updateUserSegments(rw http.ResponseWriter, req *http.Request) {
-// 	ctx := req.Context()
-
-// 	body, err := io.ReadAll(req.Body)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	log.Println(string(body))
-
-// 	var us model.User_segments
-// 	err = json.Unmarshal(body, &us)
-// 	if err != nil {
-// 		log.Println("vse horosho")
-// 		panic(err)
-// 		// make error processing ??
-// 	}
-// 	// Start a transaction
-// 	tx, err := s.conn.BeginTx(ctx, pgx.TxOptions{})
-// 	if err != nil {
-// 		http.Error(rw, "Error starting transaction", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	defer tx.Rollback(ctx)
-
-// 	// Add segments to the user
-// 	for _, segName := range us.SegmentsToAdd {
-// 		log.Println(segName)
-// 		var segmentID int
-
-// 		err = tx.QueryRow(ctx, "SELECT seg_id FROM segments WHERE seg_name = $1", segName).Scan(&segmentID)
-
-// 		log.Println(segmentID)
-
-// 		if err == pgx.ErrNoRows {
-// 			http.Error(rw, "Error: error while selecting segments: "+err.Error(), http.StatusCreated)
-// 			continue
-// 		}
-// 		_, err = tx.Exec(ctx, "INSERT INTO user_segment (user_id, segment_id) VALUES ($1, $2)", us.UserID, segmentID)
-// 		if err != nil {
-// 			http.Error(rw, "Error adding segment to user: "+err.Error(), http.StatusInternalServerError)
-// 		}
-// 	}
-
-// 	// Remove segments from the user
-// 	for _, segName := range us.SegmentsToRemove {
-// 		var segmentID int
-// 		err = tx.QueryRow(ctx, "SELECT seg_id FROM segments WHERE seg_name = $1", segName).Scan(&segmentID)
-
-// 		if err == pgx.ErrNoRows {
-// 			http.Error(rw, "Error: error while selecting segments: "+err.Error(), http.StatusCreated)
-// 			continue
-// 		}
-
-// 		_, err = tx.Exec(ctx, "DELETE FROM user_segment WHERE user_id = $1 AND segment_id = $2", us.UserID, segmentID)
-// 		if err != nil {
-// 			http.Error(rw, "Error removing segment from user: "+err.Error(), http.StatusInternalServerError)
-// 		}
-// 	}
-
-// 	// Commit the transaction
-// 	err = tx.Commit(ctx)
-// 	if err != nil {
-// 		http.Error(rw, "Error committing transaction", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	rw.WriteHeader(http.StatusOK)
-// 	rw.Write([]byte("User segments updated successfully"))
-// }
