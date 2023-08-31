@@ -6,6 +6,7 @@ import (
 
 	"httpserver/database"
 	"httpserver/model"
+	// "httpserver/handlers"
 	"log"
 	"net/http"
 
@@ -78,6 +79,11 @@ func (s *server) updateUserSegments(c *gin.Context) {
 	var us model.UserSegments
 	if err := c.ShouldBindJSON(&us); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		return
+	}
+
+	if len(us.SegmentsToAdd) == 0 && len(us.SegmentsToRemove) == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No values to update"})
 		return
 	}
 

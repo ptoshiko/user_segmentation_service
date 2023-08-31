@@ -121,9 +121,6 @@ func intArrayToString(arr []int) string {
 	return "{" + strings.Join(values, ",") + "}"
 }
 
-
-
-
 func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegments) error {
 
 	tx, err := db.conn.BeginTx(ctx, pgx.TxOptions{})
@@ -132,61 +129,75 @@ func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegment
 		return err
 	}
 
-	// check if the segmnets are valid 
-	rows, err := tx.Query(ctx, `
-		SELECT seg_id
-		FROM segments
-		WHERE seg_name = ANY($1)
-	`, us.SegmentsToAdd)
-
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		return err
-	}
-
 	var segmentIDs []int
-	// found := false
-	for rows.Next() {
-		// found = true
-		var segmentID int
-		if err := rows.Scan(&segmentID); err != nil {
-			return err
-		}
-		segmentIDs = append(segmentIDs, segmentID)
-	}
-	rows.Close()
-
-	if len(segmentIDs) != len(us.SegmentsToAdd) {
-		return fmt.Errorf("Segment not found")
-	}
-
-	rows, err = tx.Query(ctx, `
+	if len(us.SegmentsToAdd) > 0 {
+		rows, err := tx.Query(ctx, `
 		SELECT seg_id
 		FROM segments
 		WHERE seg_name = ANY($1)
-	`, us.SegmentsToRemove)
+		`, us.SegmentsToAdd)
 
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		return err
-	}
-
-	var deleteIDs []int
-	// found = false
-	for rows.Next() {
-		// found = true 
-		var deleteID int
-		if err := rows.Scan(&deleteID); err != nil {
+		if err != nil {
+			_ = tx.Rollback(ctx)
 			return err
 		}
-		deleteIDs = append(deleteIDs, deleteID)
-	}
-	rows.Close()
+		// found := false
+		for rows.Next() {
+			// found = true
+			var segmentID int
+			if err := rows.Scan(&segmentID); err != nil {
+				return err
+			}
+			segmentIDs = append(segmentIDs, segmentID)
+		}
+		rows.Close()
 
-	if len(deleteIDs) != len(us.SegmentsToRemove) {
-		return fmt.Errorf("Segment not found")
+		if len(segmentIDs) != len(us.SegmentsToAdd) {
+			return fmt.Errorf("Segment not found")
+		}
 	}
 
+	// check if the segmnets are valid 
+	// if len(us.SegmentsToRemove) > 0 {
+	// 	rows, err := tx.Query(ctx, `
+	// 		SELECT seg_id
+	// 		FROM segments
+	// 		WHERE seg_name = ANY($1)
+	// 	`, us.SegmentsToRemove)
+
+	if len(us.SegmentsToRemove) > 0 {
+		// Check if the segments to remove exist in the user_segment table
+		rows, err := tx.Query(ctx, `
+			SELECT segment_id
+			FROM user_segment
+			WHERE user_id = $1 AND segment_id IN (
+				SELECT seg_id
+				FROM segments
+				WHERE seg_name = ANY($2)
+			)
+		`, us.UserID, us.SegmentsToRemove)
+
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return err
+		}
+
+		var deleteIDs []int
+		// found = false
+		for rows.Next() {
+			// found = true 
+			var deleteID int
+			if err := rows.Scan(&deleteID); err != nil {
+				return err
+			}
+			deleteIDs = append(deleteIDs, deleteID)
+		}
+		rows.Close()
+
+		if len(deleteIDs) != len(us.SegmentsToRemove) {
+			return fmt.Errorf("Segment not found")
+		}
+	}
 	// insert segments 
 	segmentIDsStr := intArrayToString(segmentIDs)
 	_, err = tx.Exec(ctx, `
@@ -227,7 +238,7 @@ func (db *Database) GetUserSegments(ctx context.Context, userID string) ([]model
 		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error retrieving user segments"})
 		return nil, err
 	}
-	defer rows.Close()
+
 
 	var segments []model.Segment
 	for rows.Next() {
@@ -238,6 +249,7 @@ func (db *Database) GetUserSegments(ctx context.Context, userID string) ([]model
 		}
 		segments = append(segments, seg)
 	}
+	rows.Close()
 	return segments, nil
 }
 
