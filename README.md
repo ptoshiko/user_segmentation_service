@@ -25,7 +25,7 @@ $ make run
 ### Запуск тестов 
 ```bash
 make testdb
-nake t
+make t
 ```
 
 ### Реализованный функционал 
