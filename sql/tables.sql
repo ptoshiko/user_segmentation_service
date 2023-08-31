@@ -1,7 +1,5 @@
 -- Active: 1693057408979@@127.0.0.1@5432@postgres
 
--- TODO: Сделать id uuid, добавить индексы
-
 -- Таблица пользователей
 CREATE TABLE IF NOT EXISTS users(
     user_id SERIAL PRIMARY KEY,

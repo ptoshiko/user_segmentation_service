@@ -4,9 +4,6 @@ import (
 	"context"
 	"fmt"
 	"httpserver/model"
-	"log"
-	"strconv"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -21,13 +18,11 @@ func New() (*Database, error) {
 
 	conn, err := pgx.Connect(context.Background(), dsn)
 	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
-		//return nil, err
+		return nil, err
 	}
 
 	if err = conn.Ping(context.Background()); err != nil {
-		log.Fatalf("can't ping db: %s", err)
-		//return nil, err
+		return nil, err
 	}
 
 	return &Database{
@@ -42,7 +37,6 @@ func (db *Database) Close(ctx context.Context) {
 func (db *Database) CreateSegment(ctx context.Context, seg model.SegName) error {
 	tx, err := db.conn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error starting transaction"})
 		return err
 	}
 	defer tx.Rollback(ctx)
@@ -51,32 +45,22 @@ func (db *Database) CreateSegment(ctx context.Context, seg model.SegName) error 
 	err = tx.QueryRow(ctx, `SELECT seg_id FROM segments WHERE seg_name = $1`, seg.SegName).Scan(&id)
 
 	if err == nil {
-		// c.JSON(http.StatusConflict, gin.H{"error": "Segment already exists", "id": id})
 		return fmt.Errorf("Segment already exists")
 	} else if err != pgx.ErrNoRows {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error while selecting segments"})
 		return fmt.Errorf("Segment not found")
 	}
 
-	// Вставка нового сегмента
 	_, err = tx.Exec(ctx, `INSERT INTO segments (seg_name) VALUES ($1)`, seg.SegName)
 	if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error inserting segment"})
 		return err
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error committing transaction"})
-		return err
-	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (db *Database) DeleteSegment(ctx context.Context, seg model.SegName) error {
 	tx, err := db.conn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error starting transaction"})
 		return err
 	}
 	defer tx.Rollback(ctx)
@@ -85,50 +69,32 @@ func (db *Database) DeleteSegment(ctx context.Context, seg model.SegName) error 
 	err = tx.QueryRow(ctx, `SELECT seg_id FROM segments WHERE seg_name = $1`, seg.SegName).Scan(&segmentID)
 
 	if err == pgx.ErrNoRows {
-		// c.JSON(http.StatusNotFound, gin.H{"error": "Segment not found"})
 		return fmt.Errorf("Segment not found")
 	} else if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error while selecting segments"})
 		return err
 	}
 
 	_, err = tx.Exec(ctx, "DELETE FROM user_segment WHERE segment_id = $1", segmentID)
 	if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error deleting references in user_segment"})
 		return err
 	}
 
 	_, err = tx.Exec(ctx, "DELETE FROM segments WHERE seg_name = $1", seg.SegName)
 	if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error deleting segment"})
 		return err
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error committing transaction"})
-		return err
-	}
-	return nil
-}
-
-// вынести в utils
-func intArrayToString(arr []int) string {
-	values := make([]string, len(arr))
-	for i, v := range arr {
-		values[i] = strconv.Itoa(v)
-	}
-	return "{" + strings.Join(values, ",") + "}"
+	return tx.Commit(ctx)
 }
 
 func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegments) error {
 
 	tx, err := db.conn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error starting transaction"})
 		return err
 	}
 
+	// Проверка наличия сегментов 
 	var segmentIDs []int
 	if len(us.SegmentsToAdd) > 0 {
 		rows, err := tx.Query(ctx, `
@@ -141,9 +107,8 @@ func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegment
 			_ = tx.Rollback(ctx)
 			return err
 		}
-		// found := false
+
 		for rows.Next() {
-			// found = true
 			var segmentID int
 			if err := rows.Scan(&segmentID); err != nil {
 				return err
@@ -153,20 +118,11 @@ func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegment
 		rows.Close()
 
 		if len(segmentIDs) != len(us.SegmentsToAdd) {
-			return fmt.Errorf("Segment not found")
+			return fmt.Errorf("Error in segments_to_add: Segment not found")
 		}
 	}
 
-	// check if the segmnets are valid 
-	// if len(us.SegmentsToRemove) > 0 {
-	// 	rows, err := tx.Query(ctx, `
-	// 		SELECT seg_id
-	// 		FROM segments
-	// 		WHERE seg_name = ANY($1)
-	// 	`, us.SegmentsToRemove)
-
 	if len(us.SegmentsToRemove) > 0 {
-		// Check if the segments to remove exist in the user_segment table
 		rows, err := tx.Query(ctx, `
 			SELECT segment_id
 			FROM user_segment
@@ -183,9 +139,7 @@ func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegment
 		}
 
 		var deleteIDs []int
-		// found = false
 		for rows.Next() {
-			// found = true 
 			var deleteID int
 			if err := rows.Scan(&deleteID); err != nil {
 				return err
@@ -195,10 +149,10 @@ func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegment
 		rows.Close()
 
 		if len(deleteIDs) != len(us.SegmentsToRemove) {
-			return fmt.Errorf("Segment not found")
+			return fmt.Errorf("Error in segments_to_remove: Segment not found")
 		}
 	}
-	// insert segments 
+	// Добавление сегментов
 	segmentIDsStr := intArrayToString(segmentIDs)
 	_, err = tx.Exec(ctx, `
 		INSERT INTO user_segment (user_id, segment_id)
@@ -209,9 +163,7 @@ func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegment
 		return err
 	}
 
-	// // Remove segments from the user
-
-	// if len(us.SegmentsToRemove) > 0 {
+	// Удаление сегментов 
 	query := `
 		DELETE FROM user_segment
 		WHERE user_id = $1 AND segment_id IN (
@@ -222,7 +174,6 @@ func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegment
 	if err != nil {
 		_ = tx.Rollback(ctx)
 		return err
-		// }
 	}
 	return tx.Commit(ctx)
 }
@@ -235,16 +186,13 @@ func (db *Database) GetUserSegments(ctx context.Context, userID string) ([]model
 		WHERE user_segment.user_id = $1 
 		`, userID)
 	if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error retrieving user segments"})
 		return nil, err
 	}
-
 
 	var segments []model.Segment
 	for rows.Next() {
 		var seg model.Segment
 		if err := rows.Scan(&seg.SegID, &seg.SegName); err != nil {
-			// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error scanning rows"})
 			return nil, err
 		}
 		segments = append(segments, seg)
@@ -252,4 +200,3 @@ func (db *Database) GetUserSegments(ctx context.Context, userID string) ([]model
 	rows.Close()
 	return segments, nil
 }
-
