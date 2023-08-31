@@ -1,5 +1,7 @@
 -- Active: 1693057408979@@127.0.0.1@5432@postgres
 
+-- TODO: Сделать id uuid, добавить индексы
+
 -- Таблица пользователей
 CREATE TABLE IF NOT EXISTS users(
     user_id SERIAL PRIMARY KEY,
@@ -9,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users(
 -- Таблица сегментов
 CREATE TABLE IF NOT EXISTS segments(
     seg_id SERIAL PRIMARY KEY,
-    seg_name VARCHAR(50)
+    seg_name VARCHAR(50) --TODO: сделать текстом
 );
 
 -- Таблица для связи пользователей и сегментов (многие ко многим)

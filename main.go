@@ -17,8 +17,6 @@ type server struct {
 	db *database.Database
 }
 
-// createSegmnet moment
-
 var validSegmentNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
 func isValidSegmentName(name string) bool {
@@ -43,8 +41,6 @@ func (s *server) createSegment(c *gin.Context) {
 
 	err := s.db.CreateSegment(ctx, seg)
 
-	
-	// log.Println("here" , err.Error())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -86,8 +82,8 @@ func (s *server) updateUserSegments(c *gin.Context) {
 	}
 
 	err := s.db.UpdateUserSegments(ctx, us)
-
 	if err != nil {
+		log.Printf("db.UpdateUserSegments: %s", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -98,14 +94,10 @@ func (s *server) updateUserSegments(c *gin.Context) {
 // Метод получения активных сегментов пользователя. Принимает на вход id пользователя.
 
 func (s *server) getUserSegments(c *gin.Context) {
+
 	ctx := c.Request.Context()
 
 	userID := c.Param("id")
-	// var u model.User
-	// if err := c.ShouldBindJSON(&u); err != nil {
-	// 	c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
-	// 	return
-	// }
 
 	segments, err := s.db.GetUserSegments(ctx, userID)
 
@@ -152,11 +144,4 @@ func main() {
 	router.DELETE("/segment/:id", s.deleteSegment)
 
 	log.Fatal(router.Run(":8080"))
-
-	// http.HandleFunc("/create_segment", s.createSegment)
-	// http.HandleFunc("/delete_segment", s.deleteSegment)
-	// http.HandleFunc("/update_user_segments", s.updateUserSegments)
-	// http.HandleFunc("/get_user_segments", s.getUserSegments)
-
-	// log.Fatal(http.ListenAndServe(":8080", nil))
 }

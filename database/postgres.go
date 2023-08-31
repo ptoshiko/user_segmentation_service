@@ -46,7 +46,7 @@ func (db *Database) CreateSegment(ctx context.Context, seg model.SegName) error 
 		return err
 	}
 	defer tx.Rollback(ctx)
-	// Проверка, что такого сегмента еще нет
+
 	var id int
 	err = tx.QueryRow(ctx, `SELECT seg_id FROM segments WHERE seg_name = $1`, seg.SegName).Scan(&id)
 
@@ -55,7 +55,7 @@ func (db *Database) CreateSegment(ctx context.Context, seg model.SegName) error 
 		return fmt.Errorf("Segment already exists")
 	} else if err != pgx.ErrNoRows {
 		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error while selecting segments"})
-		return err
+		return fmt.Errorf("Segment not found")
 	}
 
 	// Вставка нового сегмента
@@ -86,7 +86,7 @@ func (db *Database) DeleteSegment(ctx context.Context, seg model.SegName) error 
 
 	if err == pgx.ErrNoRows {
 		// c.JSON(http.StatusNotFound, gin.H{"error": "Segment not found"})
-		return err
+		return fmt.Errorf("Segment not found")
 	} else if err != nil {
 		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error while selecting segments"})
 		return err
@@ -112,7 +112,7 @@ func (db *Database) DeleteSegment(ctx context.Context, seg model.SegName) error 
 	return nil
 }
 
-// вынести в utils 
+// вынести в utils
 func intArrayToString(arr []int) string {
 	values := make([]string, len(arr))
 	for i, v := range arr {
@@ -121,6 +121,9 @@ func intArrayToString(arr []int) string {
 	return "{" + strings.Join(values, ",") + "}"
 }
 
+
+
+
 func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegments) error {
 
 	tx, err := db.conn.BeginTx(ctx, pgx.TxOptions{})
@@ -128,77 +131,89 @@ func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegment
 		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error starting transaction"})
 		return err
 	}
-	defer tx.Rollback(ctx)
 
-	// fmt.Println(us.SegmentsToAdd)
-
+	// check if the segmnets are valid 
 	rows, err := tx.Query(ctx, `
 		SELECT seg_id
 		FROM segments
 		WHERE seg_name = ANY($1)
 	`, us.SegmentsToAdd)
 
-	// fmt.Println(err.Error())
-
 	if err != nil {
+		_ = tx.Rollback(ctx)
 		return err
 	}
-	defer rows.Close()
 
-	// var segmentIDs []int
-	// for rows.Next() {
-	// 	var segmentID int
-	// 	if err := rows.Scan(&segmentID); err != nil {
-	// 		return err
-	// 	}
-	// 	segmentIDs = append(segmentIDs, segmentID)
-	// }
-	// log.Println(segmentIDs)
+	var segmentIDs []int
+	// found := false
+	for rows.Next() {
+		// found = true
+		var segmentID int
+		if err := rows.Scan(&segmentID); err != nil {
+			return err
+		}
+		segmentIDs = append(segmentIDs, segmentID)
+	}
+	rows.Close()
 
-	// segmentIDsStr := intArrayToString(segmentIDs)
+	if len(segmentIDs) != len(us.SegmentsToAdd) {
+		return fmt.Errorf("Segment not found")
+	}
 
-	// _, err = tx.Exec(ctx, `
-	// 	INSERT INTO user_segment (user_id, segment_id)
-	// 	SELECT $1, unnest($2::integer[])
-	// `, us.UserID, segmentIDsStr)
-	// if err != nil {
-	// 	return err
-	// }
+	rows, err = tx.Query(ctx, `
+		SELECT seg_id
+		FROM segments
+		WHERE seg_name = ANY($1)
+	`, us.SegmentsToRemove)
 
-	// _, err = tx.Exec(ctx, `
-	// 	INSERT INTO user_segment (user_id, segment_id)
-	// 	SELECT $1, unnest($2::integer[])
-	// `, us.UserID, segmentIDs)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return err
+	}
 
-	// // ?? should cast segmentIDs
-	// if err != nil {
-	// 	return err
-	// }
+	var deleteIDs []int
+	// found = false
+	for rows.Next() {
+		// found = true 
+		var deleteID int
+		if err := rows.Scan(&deleteID); err != nil {
+			return err
+		}
+		deleteIDs = append(deleteIDs, deleteID)
+	}
+	rows.Close()
+
+	if len(deleteIDs) != len(us.SegmentsToRemove) {
+		return fmt.Errorf("Segment not found")
+	}
+
+	// insert segments 
+	segmentIDsStr := intArrayToString(segmentIDs)
+	_, err = tx.Exec(ctx, `
+		INSERT INTO user_segment (user_id, segment_id)
+		SELECT $1, unnest($2::integer[])
+	`, us.UserID, segmentIDsStr)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return err
+	}
 
 	// // Remove segments from the user
-	// for _, segName := range us.SegmentsToRemove {
-	// 	var segmentID int
-	// 	err = tx.QueryRow(ctx, "SELECT seg_id FROM segments WHERE seg_name = $1", segName).Scan(&segmentID)
 
-	// 	if err == pgx.ErrNoRows {
-	// 		// c.JSON(http.StatusNotFound, gin.H{"error": "Segment not found"})
-	// 		continue
-	// 	}
-
-	// 	_, err = tx.Exec(ctx, "DELETE FROM user_segment WHERE user_id = $1 AND segment_id = $2", us.UserID, segmentID)
-	// 	if err != nil {
-	// 		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error removing segment from user"})
-	// 		return err
-	// 	}
-	// }
-
-	// Commit the transaction
-	err = tx.Commit(ctx)
+	// if len(us.SegmentsToRemove) > 0 {
+	query := `
+		DELETE FROM user_segment
+		WHERE user_id = $1 AND segment_id IN (
+			SELECT seg_id FROM segments WHERE seg_name = ANY($2)
+		)
+	`
+	_, err = tx.Exec(ctx, query, us.UserID, us.SegmentsToRemove)
 	if err != nil {
-		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error committing transaction"})
+		_ = tx.Rollback(ctx)
 		return err
+		// }
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (db *Database) GetUserSegments(ctx context.Context, userID string) ([]model.Segment, error) {
@@ -226,60 +241,3 @@ func (db *Database) GetUserSegments(ctx context.Context, userID string) ([]model
 	return segments, nil
 }
 
-// func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegments) error {
-
-// 	tx, err := db.conn.BeginTx(ctx, pgx.TxOptions{})
-// 	if err != nil {
-// 		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error starting transaction"})
-// 		return err
-// 	}
-// 	defer tx.Rollback(ctx)
-
-// 	// Add segments to the user
-
-// 	// make the request not in cycle - one request
-
-// 	for _, segName := range us.SegmentsToAdd {
-
-// 		var segmentID int
-// 		err = tx.QueryRow(ctx, "SELECT seg_id FROM segments WHERE seg_name = $1", segName).Scan(&segmentID)
-
-// 		log.Println(segmentID)
-
-// 		if err == pgx.ErrNoRows {
-// 			// c.JSON(http.StatusNotFound, gin.H{"error": "Segment not found"})
-// 			continue
-// 		}
-// 		_, err = tx.Exec(ctx, "INSERT INTO user_segment (user_id, segment_id) VALUES ($1, $2)", us.UserID, segmentID)
-// 		if err != nil {
-// 			// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error adding segment to user"})
-// 			return err
-// 			// should we return ?
-// 		}
-// 	}
-
-// 	// Remove segments from the user
-// 	for _, segName := range us.SegmentsToRemove {
-// 		var segmentID int
-// 		err = tx.QueryRow(ctx, "SELECT seg_id FROM segments WHERE seg_name = $1", segName).Scan(&segmentID)
-
-// 		if err == pgx.ErrNoRows {
-// 			// c.JSON(http.StatusNotFound, gin.H{"error": "Segment not found"})
-// 			continue
-// 		}
-
-// 		_, err = tx.Exec(ctx, "DELETE FROM user_segment WHERE user_id = $1 AND segment_id = $2", us.UserID, segmentID)
-// 		if err != nil {
-// 			// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error removing segment from user"})
-// 			return err
-// 		}
-// 	}
-
-// 	// Commit the transaction
-// 	err = tx.Commit(ctx)
-// 	if err != nil {
-// 		// c.JSON(http.StatusInternalServerError, gin.H{"error": "Error committing transaction"})
-// 		return err
-// 	}
-// 	return nil
-// }
