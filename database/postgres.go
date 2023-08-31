@@ -9,7 +9,7 @@ import (
 )
 
 type Database struct {
-	conn *pgx.Conn
+	Conn *pgx.Conn
 }
 
 func New(dsn string) (*Database, error) {
@@ -24,16 +24,16 @@ func New(dsn string) (*Database, error) {
 	}
 
 	return &Database{
-		conn: conn,
+		Conn: conn,
 	}, nil
 }
 
 func (db *Database) Close(ctx context.Context) {
-	db.conn.Close(ctx)
+	db.Conn.Close(ctx)
 }
 
 func (db *Database) CreateSegment(ctx context.Context, seg model.SegName) error {
-	tx, err := db.conn.BeginTx(ctx, pgx.TxOptions{})
+	tx, err := db.Conn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (db *Database) CreateSegment(ctx context.Context, seg model.SegName) error 
 }
 
 func (db *Database) DeleteSegment(ctx context.Context, seg model.SegName) error {
-	tx, err := db.conn.BeginTx(ctx, pgx.TxOptions{})
+	tx, err := db.Conn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func (db *Database) DeleteSegment(ctx context.Context, seg model.SegName) error 
 
 func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegments) error {
 
-	tx, err := db.conn.BeginTx(ctx, pgx.TxOptions{})
+	tx, err := db.Conn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func (db *Database) UpdateUserSegments(ctx context.Context, us model.UserSegment
 }
 
 func (db *Database) GetUserSegments(ctx context.Context, userID string) ([]model.Segment, error) {
-	rows, err := db.conn.Query(ctx, `
+	rows, err := db.Conn.Query(ctx, `
 		SELECT seg_id, seg_name
 		FROM segments 
 		INNER JOIN user_segment ON segments.seg_id = user_segment.segment_id
