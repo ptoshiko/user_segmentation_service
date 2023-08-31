@@ -17,7 +17,9 @@
 
 ### Запуск
 ```bash
-make run 
+$ git clone https://github.com/ptoshiko/avito_assignment.git
+$ cd avito_assignment
+$ make run
 ```
 ### Реализованный функционал 
 

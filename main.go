@@ -13,7 +13,8 @@ import (
 
 func main() {
 
-	db, err := database.New()
+	dsn := "postgres://postgres:postgres@postgres:5432/postgres" + "?sslmode=disable"
+	db, err := database.New(dsn)
 	defer db.Close(context.Background())
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v\n", err)

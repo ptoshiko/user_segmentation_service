@@ -12,9 +12,7 @@ type Database struct {
 	conn *pgx.Conn
 }
 
-func New() (*Database, error) {
-
-	dsn := "postgres://postgres:postgres@postgres:5432/postgres" + "?sslmode=disable"
+func New(dsn string) (*Database, error) {
 
 	conn, err := pgx.Connect(context.Background(), dsn)
 	if err != nil {
