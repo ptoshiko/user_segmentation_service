@@ -1,7 +1,7 @@
 # Test Assignment for Avito Backend Internship
 # User Dynamic Segmentation Service
 
-[Русская версия](README_RU.md)
+[Версия на русском](README_RU.md)
 
 ### Task Description
 
