@@ -1,39 +1,41 @@
-# Тестовое задание для Тестовое задание для стажёра Backend Avito
-# Сервис динамического сегментирования пользователей
+# Test Assignment for Avito Backend Internship
+# User Dynamic Segmentation Service
 
-### Описание задачи
+[Русская версия](README_RU.md)
 
-Требуется реализовать сервис, хранящий пользователя и сегменты, в которых он состоит (создание, изменение, удаление сегментов, а также добавление и удаление пользователей в сегмент). 
+### Task Description
 
-Полное описание задачи по [ссылке](https://github.com/avito-tech/backend-trainee-assignment-2023).
+The task is to implement a service that stores users and the segments they belong to (creating, modifying, deleting segments, as well as adding and removing users from segments).
 
-### Технические требования 
+Full task description is available at this [link](https://github.com/avito-tech/backend-trainee-assignment-2023).
 
-1. Сервис должен предоставлять HTTP API с форматом JSON как при отправке запроса, так и при получении результата.
-2. Язык разработки: Golang.
-3. Фреймворки и библиотеки можно использовать любые.
-4. Реляционная СУБД: MySQL или PostgreSQL.
-5. Использование docker и docker-compose для поднятия и развертывания dev-среды.
+### Technical Requirements
 
-### Запуск
+1. The service must provide an HTTP API with JSON format for both sending requests and receiving results.
+2. Development language: Golang.
+3. Any frameworks and libraries can be used.
+4. Relational DBMS: MySQL or PostgreSQL.
+5. Use of docker and docker-compose for setting up and deploying the dev environment.
+
+### Setup
 ```bash
 $ git clone https://github.com/ptoshiko/avito_assignment.git
 $ cd avito_assignment
 $ make run
 ```
 
-### Запуск тестов 
+### Running Tests
 ```bash
 make testdb
 make t
 ```
 
-### Реализованный функционал 
+### Implemented Functionality
 
-#### CreateSegment  
-Метод создания сегмента.Принимает slug (название) сегмента.
+#### CreateSegment
+Method for creating a segment. Accepts a segment slug (name).
 
-**Пример запроса** 
+**Request Example**
 
 ```bash
 curl -X POST -H "Content-Type: application/json" -d '{
@@ -43,17 +45,17 @@ curl -X POST -H "Content-Type: application/json" -d '{
 ```
 <br>
 
-**Ответ**
+**Response**
 ```json
 {
   "message":"Segment created successfully"
 }
 ```
 
-#### DeleteSegment 
-Метод удаления сегмента. Принимает slug (название) сегмента.
+#### DeleteSegment
+Method for deleting a segment. Accepts a segment slug (name).
 
-**Пример запроса** 
+**Request Example**
 
 ```bash
 curl -X DELETE -H "Content-Type: application/json" -d '{
@@ -63,24 +65,23 @@ curl -X DELETE -H "Content-Type: application/json" -d '{
 ```
 <br>
 
-**Ответ**
+**Response**
 ```json
 {
   "message": "Segment deleted successfully"
 }
 ```
 
-#### UpdateUserSegments 
-Метод добавления пользователя в сегмент. Принимает список slug (названий) сегментов которые нужно добавить пользователю, список slug (названий) сегментов которые нужно удалить у пользователя, id пользователя.
+#### UpdateUserSegments
+Method for adding a user to a segment. Accepts a list of segment slugs (names) to add to the user, a list of segment slugs (names) to remove from the user, and a user ID.
 
+A request is considered valid if:
+1. Segments from the addition list are present in the segments table
+2. Segments from the removal list belong to the user
+3. One of the lists can be empty
+In other cases, the request is considered invalid.
 
-Валидным считается запрос, в котором:
-1. сегменты из списка для добавления присутвуют в таблице сегментов 
-2. сегменты из списка для удаления принадлежат пользователю
-3. один из списков может быть пустым 
-В остальных случаях запрос считается невалидным. 
-
-**Пример запроса** 
+**Request Example**
 
 ```bash
 curl -X PATCH -H "Content-Type: application/json" -d '{
@@ -92,7 +93,7 @@ curl -X PATCH -H "Content-Type: application/json" -d '{
 ```
 <br>
 
-**Ответ**
+**Response**
 ```json
 {
   "message": "User segments updated successfully"
@@ -100,7 +101,7 @@ curl -X PATCH -H "Content-Type: application/json" -d '{
 ```
 
 #### GetUserSegments
-Метод получения активных сегментов пользователя. Принимает на вход id пользователя.
+Method for retrieving active segments of a user. Takes a user ID as input.
 
 ```bash
 curl -X GET http://localhost:8080/user/1
@@ -108,13 +109,12 @@ curl -X GET http://localhost:8080/user/1
 ```
 <br>
 
-**Ответ**
+**Response**
 ```json
 {
   [{"seg_id":1,"seg_name":"AVITO_DISCOUNT_30"},{"seg_id":3,"seg_name":"AVITO_VOICE_MESSAGES"}]
 }
 ```
-
 
 
 
